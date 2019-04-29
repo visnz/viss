@@ -1,4 +1,7 @@
 # 集群服务部署 User Guide
+- [ ] LOGO TBD
+- [ ] 介绍视频 TBD
+
 ## 部署部分
 ### 0. 架构预览
 
@@ -80,7 +83,7 @@
     ```
 5. 获取配置文件组
     ```sh
-    git clone $CONFIG_REPO 
+    apt install -y git && git clone $CONFIG_REPO 
     # 进入master主机配置文件夹：
     #  ├─ CI.yaml             # CI系统，包含 nginx gitea drone-server drone-agent registry五部分
     #  ├─ config
@@ -92,12 +95,12 @@
     ```
     nginx.conf没有轻量读取环境变量的功能，执行以下语句，将``nginx.conf``中的配置替换：
     ```sh
-    sed -i "s/\${ACME_DOMAIN}/$ACME_DOMAIN/g" ./config/nginx.conf/nginx.conf
+    sed -i "s/\${ACME_DOMAIN}/$ACME_DOMAIN/g" viss/master/config/nginx.conf/nginx.conf
     ```
 6. 配置SSL
     ```sh
     # 获取acme脚本
-    apt update; apt upgrade; apt install -y socat; curl https://get.acme.sh | sh
+    apt update; apt -y upgrade; apt install -y socat; curl https://get.acme.sh | sh
     
     # 启动验证
     export CF_Key="1234567890123456789012345678901234567" && export CF_Email="123456@gmail.com"
@@ -111,9 +114,11 @@
     # master目录
     ./selectall.sh up -d
     # 相当于执行 docker-compose -f CI.yaml up -d
-    # 会拉取镜像进行快速部署
+    # 
+    # 如果出现WARNING警告，可能需要依照~/.bashrc将警告的环境变量重新export一遍
     ```
 8. 可以访问：
+
     网址|效果
     -|-
     http://${ACME_DOMAIN}|跳转 https://${ACME_DOMAIN}
@@ -141,6 +146,9 @@
 3. 将Manager机器添加到Master管理
     在Master主机上，运行：
     ```sh
+    # 如果服务商忘记添加ssh钥匙，可用下列命令将master推送到Manager上：
+    #     ssh-copy-id -i $DOCKER_MACHINE_SSH_KEY_PUB root@manager.${ACME_DOMAIN} 
+
     docker-machine create -d generic --generic-ip-address=manager.$ACME_DOMAIN --generic-ssh-user=root --generic-ssh-key $DOCKER_MACHINE_SSH_KEY Manager
     # 这里将在Manager上安装Docker，并通过指定的密钥验证，将接下来将Manager机器添加到Master管理，以后也将一直在Master管理、部署Manager
     docker-machine ssh Manager 
@@ -169,21 +177,21 @@
     cat << EOF > ./nfsd.yml
     version: '3'
     services:
-    nfsd:
-        image: erichough/nfs-server
-        container_name: nfsserver
-        volumes:
-        - ./exports.conf:/etc/exports:ro
-        - /nfs:/nfs
-        ports:
-        - "2049:2049"
-        privileged: true
-        restart: always
+        nfsd:
+            image: erichough/nfs-server
+            container_name: nfsserver
+            volumes:
+                - ./exports.conf:/etc/exports:ro
+                - /nfs:/nfs
+            ports:
+                - "2049:2049"
+            privileged: true
+            restart: always
     EOF
     ```
 2. 创建目录并启动
     ```sh
-    mkdir /nfs ; docker-compose -f ./nfsd.yml up -d
+    mkdir /nfs ; docker-compose -f nfsd.yml up -d
     # 可以通过 docker logs nfsserver 查看状态
     ```
     此时nfsd被使用docker单独执行，与集群执行的服务无关。
@@ -260,9 +268,23 @@
         repo     = 同上 ${registryAddress}/${registryUsername}/${imageName}
         registry = 同上 ${registryAddress}
         ```
-    4. 设置完成后，返回gitea的repo，打开仓库设置（setting）中，``管理webhook``中，可以看到drone以及帮我们添加好了webhook，点开该webhook，在下方点击``测试推送``，gitea将会推送最新的一次master的webhook到drone去。
+    4. 设置完成后，返回gitea的repo，打开``仓库设置（setting）``中，``管理webhook``中，可以看到drone以及帮我们添加好了webhook，点开该webhook，在下方点击``测试推送``，gitea将会推送最新的一次master的webhook到drone去。
     5. 回切到drone，已经开始运行，并按照Dockerfile打包成docker，推送到指定registry
     6. 在一台具有docker环境的主机上该repo下刚刚修改的docker-compose进行部署：``docker-compose up -d``，访问``16123``端口便可看到使用docker打包的博客
+    或者直接在Master上：
+    ```sh
+    cat << EOF > /tmp/tmpcompose.yml
+    version: '3'
+    services:
+        viss-test:
+            container_name: viss-test
+            restart: always
+            image: registry.${ACME_DOMAIN}/visnz/visn-test
+            ports:
+                - "16123:80"
+    EOF
+    docker-compose -f /tmp/tmpcompose.yml up -d
+    ```
 ### 集群部分测试
 1. 获取您自己的配置文件repo
     ```sh
@@ -289,6 +311,9 @@
     无状态服务将全部配置打包进Docker，没有读写操作，不访问文件系统
     ```sh
     # 1. 无状态服务（global）
+    # agent 需要Master上的两个变量：
+    #   export ACME_DOMAIN=
+    #   export DRONE_RPC_SECRET=
     docker stack deploy -c  cluster/droneagent.yml d
     docker service ps d_drone-agent
     # 测试：drone同时执行的最多操作个数=至今创建所有主机×2,最少为2（Master）
