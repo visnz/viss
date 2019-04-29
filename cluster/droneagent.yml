@@ -1,0 +1,14 @@
+version: '3'
+services:
+  drone-agent:
+    image: drone/agent
+    command: agent
+    deploy:
+      mode: global
+    environment:
+      - DRONE_RPC_SERVER=https://drone.${ACME_DROME}
+      - DRONE_RPC_SECRET=${DRONE_RPC_SECRET}
+      - DRONE_RUNNER_CAPACITY=2
+      - DRONE_RUNNER_NAME=agent
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
